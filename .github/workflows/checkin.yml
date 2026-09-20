@@ -24,4 +24,5 @@ jobs:
       - name: Run check-in
         env:
           KUN_COOKIE: ${{ secrets.KUN_COOKIE }}
+          KUN_COOKIES: ${{ secrets.KUN_COOKIES }}
         run: python auto_checkin.py

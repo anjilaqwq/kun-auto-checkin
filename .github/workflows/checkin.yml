@@ -25,5 +25,4 @@ jobs:
         env:
           KUN_COOKIE: ${{ secrets.KUN_COOKIE }}
           KUN_COOKIES: ${{ secrets.KUN_COOKIES }}
-        # 保留失败日志和汇总，但不让临时签到失败触发 Actions 告警邮件
-        run: python auto_checkin.py --no-fail
+        run: python auto_checkin.py

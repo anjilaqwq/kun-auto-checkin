@@ -126,6 +126,15 @@ def print_status(status):
         print(f"  新消息: {'有' if status.get('has_new_message') else '无'}")
 
 
+def is_already_checked_in(message):
+    """识别接口表示“今天已经签到”的常见文案。"""
+    message = str(message).lower()
+    return any(
+        marker in message
+        for marker in ("已签到", "已经签到", "签到过了", "already")
+    )
+
+
 def check_in(cookie_value):
     try:
         resp = requests.post(
@@ -143,7 +152,7 @@ def check_in(cookie_value):
         else:
             msg = data.get("message", "未知错误")
             print(f"[{now}] 签到结果: {msg}")
-            if "已签到" in msg or "already" in msg.lower():
+            if is_already_checked_in(msg):
                 return True
             return False
     except requests.exceptions.RequestException as e:
@@ -160,7 +169,13 @@ def run_once(cookie_value, account_number=None, account_total=None):
     print("=" * 40)
 
     print("\n[签到前状态]")
-    print_status(check_status(cookie_value))
+    status = check_status(cookie_value)
+    print_status(status)
+
+    if status and status.get("is_check_in"):
+        print("\n[执行签到]")
+        print("[签到结果] 今天已经签到过，跳过重复签到")
+        return True
 
     print("\n[执行签到]")
     success = check_in(cookie_value)
@@ -216,11 +231,6 @@ def main():
     )
     parser.add_argument("--loop", action="store_true", help="持续运行模式")
     parser.add_argument("--hours", type=int, default=24, help="循环间隔小时数 (默认24)")
-    parser.add_argument(
-        "--no-fail",
-        action="store_true",
-        help="即使有账号签到失败也返回退出码 0（适用于定时任务）",
-    )
     args = parser.parse_args()
 
     if args.hours <= 0:
@@ -245,8 +255,7 @@ def main():
     if args.loop:
         run_loop(cookies, args.hours)
         return 0
-    success = run_all(cookies)
-    return 0 if success or args.no_fail else 1
+    return 0 if run_all(cookies) else 1
 
 
 if __name__ == "__main__":

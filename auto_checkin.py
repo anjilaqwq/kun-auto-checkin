@@ -216,6 +216,11 @@ def main():
     )
     parser.add_argument("--loop", action="store_true", help="持续运行模式")
     parser.add_argument("--hours", type=int, default=24, help="循环间隔小时数 (默认24)")
+    parser.add_argument(
+        "--no-fail",
+        action="store_true",
+        help="即使有账号签到失败也返回退出码 0（适用于定时任务）",
+    )
     args = parser.parse_args()
 
     if args.hours <= 0:
@@ -240,7 +245,8 @@ def main():
     if args.loop:
         run_loop(cookies, args.hours)
         return 0
-    return 0 if run_all(cookies) else 1
+    success = run_all(cookies)
+    return 0 if success or args.no_fail else 1
 
 
 if __name__ == "__main__":

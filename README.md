@@ -16,6 +16,9 @@ python auto_checkin.py --cookie <你的cookie> --loop
 
 # 自定义间隔（如每12小时）
 python auto_checkin.py --cookie <你的cookie> --loop --hours 12
+
+# 有账号失败时仍返回退出码 0（适合不希望收到失败通知的定时任务）
+python auto_checkin.py --cookie <你的cookie> --no-fail
 ```
 
 ### 环境变量
@@ -62,3 +65,4 @@ Cookie 来源按 `--cookie`、`KUN_COOKIES`、`KUN_COOKIE` 的顺序优先选用
 - Cookie 有效期约 90 天，过期后需重新获取
 - Cookie 是你的登录凭证，**不要**提交到公开仓库
 - 多账号会依次签到；单个账号失败不会影响后续账号，结束时会输出汇总
+- GitHub Actions 默认使用 `--no-fail`，签到失败会保留在日志中，但不会使任务失败

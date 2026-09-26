@@ -1,5 +1,7 @@
 # 鲲 Galgame 论坛自动签到脚本
 
+使用论坛当前的 `/api/v1/me` 与 `/api/v1/me/check-ins` 接口。
+
 ## 使用方法
 
 ### 命令行
@@ -51,6 +53,9 @@ Cookie 来源按 `--cookie`、`KUN_COOKIES`、`KUN_COOKIE` 的顺序优先选用
    - 多账号：创建 `KUN_COOKIES`，值使用 JSON 数组或一行一个 Cookie
 4. 每天北京时间 8:00 自动执行，也可手动触发
 
+工作流会打印实际加载的账号数。`KUN_COOKIES` 配了两个账号却只显示一个时，
+请检查 Secret 是否仍含两个不同的 Cookie；GitHub 不提供已保存 Secret 的明文查看。
+
 ## 如何获取 Cookie
 
 1. 浏览器登录 https://www.kungal.com/
@@ -63,4 +68,6 @@ Cookie 来源按 `--cookie`、`KUN_COOKIES`、`KUN_COOKIE` 的顺序优先选用
 - Cookie 有效期约 90 天，过期后需重新获取
 - Cookie 是你的登录凭证，**不要**提交到公开仓库
 - 多账号会依次签到；单个账号失败不会影响后续账号，结束时会输出汇总
-- 当天已经签到的账号会被视为成功并跳过重复签到；Cookie 失效等真实错误仍会使任务失败
+- 当天已签到会跳过重复请求；如果状态查询不可用，签到接口返回的
+  `ALREADY_EXISTS`（HTTP 409）也会视为成功
+- Cookie 失效、接口变更及其他真实错误仍会使任务失败

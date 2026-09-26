@@ -1,13 +1,4 @@
-"""
-鲲 Galgame 论坛自动签到脚本
-每天自动签到获取萌萌点
-
-用法:
-  python auto_checkin.py --cookie <cookie1> --cookie <cookie2>
-  python auto_checkin.py --cookie <cookie1> --cookie <cookie2> --loop
-  KUN_COOKIE=<你的cookie> python auto_checkin.py
-  KUN_COOKIES='["<cookie1>", "<cookie2>"]' python auto_checkin.py
-"""
+"""鲲 Galgame 论坛多账号自动签到，使用论坛的 /api/v1 接口。"""
 
 import argparse
 import json
@@ -20,8 +11,16 @@ from http.cookies import SimpleCookie
 import requests
 
 BASE_URL = "https://www.kungal.com"
-CHECKIN_ENDPOINT = "/api/user/check-in"
-STATUS_ENDPOINT = "/api/user/status"
+STATUS_ENDPOINT = "/api/v1/me"
+CHECKIN_ENDPOINT = "/api/v1/me/check-ins"
+TIMEOUT_SECONDS = 10
+
+
+class APIError(Exception):
+    def __init__(self, message, status=None, code=None):
+        super().__init__(message)
+        self.status = status
+        self.code = code
 
 
 def normalize_cookie(cookie_value):
@@ -91,73 +90,44 @@ def collect_cookies(cli_cookies, env_cookies=None, env_cookie=None):
     return cookies
 
 
-def get_headers(cookie_value):
-    return {
-        "Cookie": f"kungal_session={cookie_value}",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Origin": BASE_URL,
-        "Referer": f"{BASE_URL}/",
-    }
-
-
-def check_status(cookie_value):
+def request_api(session, method, path):
+    """读取 v1 的直接 JSON 响应；错误响应使用 HTTP 状态和 problem.code。"""
     try:
-        resp = requests.get(
-            f"{BASE_URL}{STATUS_ENDPOINT}",
-            headers=get_headers(cookie_value),
-            timeout=10,
+        response = session.request(
+            method,
+            f"{BASE_URL}{path}",
+            timeout=TIMEOUT_SECONDS,
+            allow_redirects=False,
         )
-        data = resp.json()
-        if data.get("code") == 0:
-            return data.get("data")
-        else:
-            print(f"[状态查询] {data.get('message', '未知错误')}")
-            return None
-    except Exception as e:
-        print(f"[状态查询失败] {e}")
-        return None
+    except requests.exceptions.RequestException as exc:
+        raise APIError(f"网络请求失败: {exc}") from exc
+
+    if 300 <= response.status_code < 400:
+        raise APIError(f"接口意外重定向 (HTTP {response.status_code})", response.status_code)
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise APIError(f"接口返回非 JSON (HTTP {response.status_code})", response.status_code) from exc
+
+    if not isinstance(data, dict):
+        raise APIError(f"接口响应格式错误 (HTTP {response.status_code})", response.status_code)
+
+    if not 200 <= response.status_code < 300:
+        code = data.get("code")
+        detail = data.get("detail") or data.get("message") or data.get("title")
+        message = f"HTTP {response.status_code} / {code or 'UNKNOWN'}"
+        if detail:
+            message += f": {detail}"
+        raise APIError(message, response.status_code, code)
+
+    return data
 
 
 def print_status(status):
-    if status:
-        print(f"  萌萌点: {status.get('moemoepoints', '未知')}")
-        print(f"  已签到: {'是' if status.get('is_check_in') else '否'}")
-        print(f"  新消息: {'有' if status.get('has_new_message') else '无'}")
-
-
-def is_already_checked_in(message):
-    """识别接口表示“今天已经签到”的常见文案。"""
-    message = str(message).lower()
-    return any(
-        marker in message
-        for marker in ("已签到", "已经签到", "签到过了", "already")
-    )
-
-
-def check_in(cookie_value):
-    try:
-        resp = requests.post(
-            f"{BASE_URL}{CHECKIN_ENDPOINT}",
-            headers=get_headers(cookie_value),
-            timeout=10,
-        )
-        data = resp.json()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        if data.get("code") == 0:
-            points = data.get("data")
-            print(f"[{now}] 签到成功! 获得萌萌点: {points}")
-            return True
-        else:
-            msg = data.get("message", "未知错误")
-            print(f"[{now}] 签到结果: {msg}")
-            if is_already_checked_in(msg):
-                return True
-            return False
-    except requests.exceptions.RequestException as e:
-        print(f"[签到请求失败] {e}")
-        return False
+    print(f"  萌萌点: {status['moemoepoint']}")
+    print(f"  已签到: {'是' if status['has_checked_in_today'] else '否'}")
+    print(f"  新消息: {'有' if status.get('has_unread_messages') else '无'}")
 
 
 def run_once(cookie_value, account_number=None, account_total=None):
@@ -168,23 +138,49 @@ def run_once(cookie_value, account_number=None, account_total=None):
         print(f"账号 {account_number}/{account_total}")
     print("=" * 40)
 
-    print("\n[签到前状态]")
-    status = check_status(cookie_value)
-    print_status(status)
+    with requests.Session() as session:
+        session.headers.update({
+            "Accept": "application/json",
+            "User-Agent": "kun-auto-checkin/1.0",
+        })
+        session.cookies.set("kungal_session", cookie_value, domain="www.kungal.com", path="/")
 
-    if status and status.get("is_check_in"):
+        print("\n[签到前状态]")
+        try:
+            status = request_api(session, "GET", STATUS_ENDPOINT)
+            if status.get("object") != "me" or not isinstance(
+                status.get("has_checked_in_today"), bool
+            ) or not isinstance(status.get("moemoepoint"), int):
+                raise APIError("状态响应格式与 /api/v1/me 不符")
+            print_status(status)
+            if status["has_checked_in_today"]:
+                print("[签到结果] 今天已签到，跳过重复请求")
+                return True
+        except APIError as exc:
+            print(f"[状态查询失败] {exc}")
+            if exc.status in (401, 403):
+                return False
+
         print("\n[执行签到]")
-        print("[签到结果] 今天已经签到过，跳过重复签到")
+        try:
+            result = request_api(session, "POST", CHECKIN_ENDPOINT)
+        except APIError as exc:
+            if exc.status == 409 and exc.code == "ALREADY_EXISTS":
+                print("[签到结果] 今天已签到")
+                return True
+            print(f"[签到失败] {exc}")
+            return False
+
+        if result.get("object") != "check_in" or not isinstance(
+            result.get("moemoepoint_awarded"), int
+        ):
+            print("[签到失败] 签到响应格式与 /api/v1/me/check-ins 不符")
+            return False
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{now}] 签到成功，获得萌萌点: {result['moemoepoint_awarded']}")
+        print(f"  当前萌萌点: {result.get('moemoepoint', '未知')}")
         return True
-
-    print("\n[执行签到]")
-    success = check_in(cookie_value)
-
-    if success:
-        print("\n[签到后状态]")
-        print_status(check_status(cookie_value))
-
-    return success
 
 
 def run_all(cookies):

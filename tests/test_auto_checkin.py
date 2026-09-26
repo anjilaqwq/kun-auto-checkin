@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+from io import StringIO
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +21,8 @@ class CheckInTests(unittest.TestCase):
         session.__enter__.return_value = session
         session.request.side_effect = responses
         with patch.object(auto_checkin.requests, "Session", return_value=session):
-            result = auto_checkin.run_once("test-cookie", 1, 1)
+            with redirect_stdout(StringIO()):
+                result = auto_checkin.run_once("test-cookie", 1, 1)
         return result, session
 
     def test_already_checked_in_skips_post(self):
